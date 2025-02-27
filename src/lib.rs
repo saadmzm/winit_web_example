@@ -9,72 +9,102 @@ use wasm_bindgen::prelude::*;
 // Define your application state
 #[derive(Default)]
 struct App {
-    window: Option<Window>,
+    main_window: Option<Window>,
+    child_window: Option<Window>, // Add a child window
 }
 
-// Implement the ApplicationHandler trait
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() {
-            // Create window attributes with resizable set to true
+        // Create the main window if it doesn't exist
+        if self.main_window.is_none() {
             let attrs = WindowAttributes::default()
-                .with_title("Winit Web Example")
-                .with_resizable(true); // Enable resizing
+                .with_title("Main Window")
+                .with_resizable(true);
+            let window = event_loop.create_window(attrs).expect("Failed to create main window");
 
-            // Create the window
-            let window = event_loop
-                .create_window(attrs)
-                .expect("Failed to create window");
-
-            // On web, append the canvas to the document body and set initial size
             #[cfg(target_arch = "wasm32")]
             {
                 use winit::platform::web::WindowExtWebSys;
                 let canvas = window.canvas().expect("Canvas not found");
-                let result = web_sys::window()
+                let doc_body = web_sys::window()
                     .and_then(|win| win.document())
                     .and_then(|doc| doc.body())
-                    .and_then(|body| {
-                        body.append_child(&canvas).map(|_| ()).ok()
-                    });
-                if result.is_none() {
-                    panic!("Failed to append canvas to document body");
-                }
-
-                // Set the canvas style to allow resizing with the window
+                    .expect("Failed to get document body");
+                doc_body.append_child(&canvas).expect("Failed to append main canvas");
                 let style = canvas.style();
-                style.set_property("width", "50%").expect("Failed to set width");
-                style.set_property("height", "50%").expect("Failed to set height");
+                style.set_property("width", "100%").expect("Failed to set width");
+                style.set_property("height", "100%").expect("Failed to set height");
+                style.set_property("position", "absolute").expect("Failed to set position");
+                style.set_property("top", "10px").expect("Failed to set top");
+                style.set_property("left", "10px").expect("Failed to set left");
             }
+            self.main_window = Some(window);
+        }
 
-            self.window = Some(window);
+        // Create the child window if it doesn't exist
+        if self.child_window.is_none() {
+            let attrs = WindowAttributes::default()
+                .with_title("Child Window")
+                .with_resizable(true);
+            let window = event_loop.create_window(attrs).expect("Failed to create child window");
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                use winit::platform::web::WindowExtWebSys;
+                let canvas = window.canvas().expect("Canvas not found");
+                let doc_body = web_sys::window()
+                    .and_then(|win| win.document())
+                    .and_then(|doc| doc.body())
+                    .expect("Failed to get document body");
+                doc_body.append_child(&canvas).expect("Failed to append child canvas");
+                let style = canvas.style();
+                style.set_property("width", "25%").expect("Failed to set width");
+                style.set_property("height", "25%").expect("Failed to set height");
+                style.set_property("position", "absolute").expect("Failed to set position");
+                style.set_property("top", "60px").expect("Failed to set top"); // Offset from main
+                style.set_property("left", "60px").expect("Failed to set left");
+                style.set_property("border", "1px solid black").expect("Failed to set border");
+            }
+            self.child_window = Some(window);
         }
     }
 
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        // Handle events for both windows
+        let target_window = if Some(window_id) == self.main_window.as_ref().map(|w| w.id()) {
+            "Main"
+        } else if Some(window_id) == self.child_window.as_ref().map(|w| w.id()) {
+            "Child"
+        } else {
+            "Unknown"
+        };
+
         match event {
             WindowEvent::CloseRequested => {
-                println!("Close requested; exiting...");
-                self.window = None;
+                println!("Close requested for {} window; exiting...", target_window);
+                self.main_window = None;
+                self.child_window = None;
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                if let Some(_window) = self.window.as_ref() {
-                    println!("Redraw requested");
-                    // Add rendering logic here (e.g., WebGL or wgpu)
-                }
+                println!("Redraw requested for {} window", target_window);
             }
             WindowEvent::Resized(physical_size) => {
-                if let Some(window) = self.window.as_ref() {
-                    println!("Window resized to {:?}", physical_size);
-                    // On web, the canvas size updates automatically if styled correctly,
-                    // but you might need this for rendering context updates (e.g., WebGL)
-                    window.request_redraw();
+                println!("{} window resized to {:?}", target_window, physical_size);
+                if let Some(window) = self.main_window.as_ref() {
+                    if window.id() == window_id {
+                        window.request_redraw();
+                    }
+                }
+                if let Some(window) = self.child_window.as_ref() {
+                    if window.id() == window_id {
+                        window.request_redraw();
+                    }
                 }
             }
             _ => {}
@@ -88,20 +118,11 @@ impl ApplicationHandler for App {
     }
 }
 
-// WebAssembly entry point
 #[wasm_bindgen(start)]
 pub fn run() -> Result<(), JsValue> {
-    // Set up panic hook for better error reporting
     console_error_panic_hook::set_once();
-
-    // Create the event loop
     let event_loop = EventLoop::new().expect("Failed to create event loop");
-
-    // Initialize the application
     let mut app = App::default();
-
-    // Run the event loop with the application
     event_loop.run_app(&mut app).expect("Failed to run event loop");
-
     Ok(())
 }
