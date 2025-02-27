@@ -9,14 +9,21 @@
             padding: 0;
             width: 100%;
             height: 100%;
-            overflow: hidden; /* Prevents scrollbars */
+            overflow: hidden;
         }
     </style>
 </head>
 <body>
     <script type="module">
         import init from './pkg/winit_web_example.js';
-        init().then(() => console.log("WASM loaded"));
+        init().then(() => console.log("WASM loaded")).catch((e) => {
+            // Ignore the control flow exception
+            if (e.message.includes("Using exceptions for control flow")) {
+                console.log("Event loop exited normally");
+            } else {
+                console.error("Unexpected error:", e);
+            }
+        });
     </script>
 </body>
 </html>
